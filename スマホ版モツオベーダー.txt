@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>モツオベーダー - スマホ対応版</title>
+  <style>
+    body { background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; touch-action: none; }
+    #game-container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 2/3; }
+    canvas { background: #0a0a0a; border: 3px solid #d35400; border-radius: 10px; display: block; width: 100%; height: 100%; box-shadow: 0 0 20px rgba(211, 84, 0, 0.4);}
+    #start-screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 10; border-radius: 10px;
+    }
+    h1 { color: #f1c40f; font-size: 28px; margin-bottom: 5px; text-shadow: 2px 2px #d35400; }
+    button { padding: 15px 40px; font-size: 20px; background: #d35400; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; }
+    #high-score-ui { margin-top: 10px; color: #f1c40f; font-weight: bold; }
+    .hint { margin-top: 15px; color: #ccc; font-size: 13px; text-align: center; line-height: 1.5; padding: 0 10px;}
+  </style>
+</head>
+<body>
+
+<div id="game-container">
+  <div id="start-screen">
+    <h1>モツオベーダー</h1>
+    <div id="high-score-ui">最高売上: 0円</div>
+    <button id="start-btn">暖簾をくぐる</button>
+    <div class="hint">画面の左側・右側を長押しで移動<br>（自動連射）</div>
+  </div>
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startScreen = document.getElementById('start-screen');
+const startBtn = document.getElementById('start-btn');
+const highScoreDisplay = document.getElementById('high-score-ui');
+
+const enemyChars = ['シ','ロ','レ','バ','ガ','ツ','ハ','カ','シ','ラ','ナ','ン','コ','ツ','ア','ブ','ラ','ビ','ー','ル'];
+const validWords = ['シロ','レバ','ガツ','ナンコツ','アブラ','ハツ','カシラ','ビール'];
+
+let player, bullets, enemyBullets, enemies, score, collectedChars, gameSpeed, frameCount, isRunning, message, msgTimer;
+let groupX, enemyMoveDir, moveSoundStep = 0, moveTick = 0;
+let keys = {};
+let highScore = localStorage.getItem('motsuo_highscore') || 0;
+
+// タッチ入力管理
+let touchMove = 0; // -1: 左, 0: なし, 1: 右
+
+const playerImg = new Image();
+playerImg.src = 'umewari.png'; 
+let useImage = false;
+playerImg.onload = () => { useImage = true; };
+
+let audioCtx;
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playBeep(freq, duration, type='square', vol=0.05) {
+    if(!audioCtx || audioCtx.state !== 'running') return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playInvaderStep() {
+    const freqs = [200, 150, 100, 80];
+    playBeep(freqs[moveSoundStep], 0.1, 'sawtooth', 0.04);
+    moveSoundStep = (moveSoundStep + 1) % 4;
+}
+
+// PC操作
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// スマホ操作
+window.addEventListener('touchstart', e => {
+    const touchX = e.touches[0].clientX;
+    if (touchX < window.innerWidth / 2) touchMove = -1;
+    else touchMove = 1;
+}, {passive: false});
+
+window.addEventListener('touchend', () => { touchMove = 0; }, {passive: false});
+
+highScoreDisplay.innerText = `最高売上: ${highScore}円`;
+
+startBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    initAudio();
+    startScreen.style.display = 'none';
+    initGame();
+});
+
+function initGame() {
+    player = { x: 175, y: 520, w: 50, h: 65 };
+    bullets = []; enemyBullets = []; enemies = [];
+    score = 0; collectedChars = ""; gameSpeed = 1; frameCount = 0;
+    message = ""; msgTimer = 0;
+    groupX = 40; enemyMoveDir = 1; moveSoundStep = 0; moveTick = 0;
+    spawnEnemies();
+    isRunning = true;
+    requestAnimationFrame(gameLoop);
+}
+
+function spawnEnemies() {
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 6; c++) {
+            enemies.push({ col: c, y: 80 + r * 45, char: enemyChars[Math.floor(Math.random() * enemyChars.length)], alive: true, respawn: 0, cd: Math.random() * 800 + 1000 });
+        }
+    }
+}
+
+function addChar(c) {
+    collectedChars = (collectedChars + c).slice(-10);
+    for (const word of validWords) {
+        let tempHistory = collectedChars.split('');
+        let matchCount = 0;
+        for (const char of word) {
+            const index = tempHistory.indexOf(char);
+            if (index !== -1) { tempHistory.splice(index, 1); matchCount++; }
+        }
+        if (matchCount === word.length) {
+            score += 500;
+            message = "「" + word + "、お待ちっ！」 (+500)";
+            msgTimer = 90;
+            collectedChars = tempHistory.join('');
+            playBeep(880, 0.1, 'square', 0.06);
+            setTimeout(() => playBeep(1100, 0.15, 'square', 0.06), 100);
+            break;
+        }
+    }
+}
+
+function update() {
+    if (!isRunning) return;
+
+    gameSpeed = 1 + (score / 10000);
+
+    // 移動ロジック (キーボード or タッチ)
+    if ((keys['ArrowLeft'] || touchMove === -1) && player.x > 0) player.x -= 4.5;
+    if ((keys['ArrowRight'] || touchMove === 1) && player.x < canvas.width - player.w) player.x += 4.5;
+
+    // 自動射撃
+    if (frameCount % 22 === 0) {
+        bullets.push({ x: player.x + player.w / 2, y: player.y });
+        playBeep(600, 0.04, 'square', 0.02);
+    }
+
+    let stepInterval = Math.max(8, 35 - Math.floor(score / 1000));
+    moveTick++;
+    if (moveTick >= stepInterval) { playInvaderStep(); moveTick = 0; }
+
+    let edgeHit = false;
+    let moveAmount = 0.5 * gameSpeed * enemyMoveDir;
+    groupX += moveAmount;
+
+    enemies.forEach(e => {
+        if (e.alive) {
+            let currentX = groupX + e.col * 55;
+            if (enemyMoveDir === 1 && currentX > canvas.width - 50) edgeHit = true;
+            if (enemyMoveDir === -1 && currentX < 10) edgeHit = true;
+        }
+    });
+
+    if (edgeHit) {
+        enemyMoveDir *= -1;
+        enemies.forEach(e => { if (e.alive) e.y += 18; });
+    }
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.y -= 8;
+        if (b.y < 0) { bullets.splice(i, 1); continue; }
+        let hit = false;
+        for (let j = 0; j < enemies.length; j++) {
+            let e = enemies[j];
+            let ex = groupX + e.col * 55, ey = e.y;
+            if (e.alive && b.x > ex && b.x < ex + 40 && b.y > ey - 15 && b.y < ey + 15) {
+                e.alive = false; e.respawn = 140; score += 10;
+                playBeep(120, 0.08, 'sawtooth', 0.04);
+                addChar(e.char); hit = true; break;
+            }
+        }
+        if (hit) bullets.splice(i, 1);
+    }
+
+    enemies.forEach(e => {
+        if (!e.alive) {
+            if (--e.respawn <= 0) { e.alive = true; e.char = enemyChars[Math.floor(Math.random() * enemyChars.length)]; e.y = 70; }
+            return;
+        }
+        if (--e.cd <= 0) {
+            enemyBullets.push({ x: groupX + e.col * 55 + 20, y: e.y + 10 });
+            e.cd = (Math.random() * 2500 + 1500) / gameSpeed;
+        }
+        if (e.y > player.y - 10) gameOver();
+    });
+
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        let eb = enemyBullets[i];
+        eb.y += 1.8 * gameSpeed;
+        if (eb.y > canvas.height) { enemyBullets.splice(i, 1); continue; }
+        if (eb.x > player.x && eb.x < player.x + player.w && eb.y > player.y && eb.y < player.y + player.h) gameOver();
+    }
+
+    frameCount++;
+}
+
+function gameOver() {
+    isRunning = false;
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('motsuo_highscore', highScore);
+        highScoreDisplay.innerText = `最高売上: ${highScore}円`;
+    }
+    setTimeout(() => { alert("本日閉店！ 売上: " + score + "円"); startScreen.style.display = 'flex'; }, 10);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "rgba(211, 84, 0, 0.15)";
+    ctx.lineWidth = 2;
+    for(let i=10; i<canvas.width; i+=20) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 35); ctx.stroke();
+    }
+    enemies.forEach(e => {
+        if (!e.alive) return;
+        let ex = groupX + e.col * 55, ey = e.y;
+        ctx.fillStyle = '#f3d6c1'; ctx.beginPath(); ctx.ellipse(ex + 20, ey, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#333'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(e.char, ex + 12, ey + 6);
+    });
+    if (useImage) { ctx.drawImage(playerImg, player.x, player.y, player.w, player.h); }
+    else {
+        ctx.fillStyle = '#f39c12'; ctx.fillRect(player.x + 10, player.y + 10, player.w - 20, player.h - 10);
+        ctx.strokeStyle = '#fff'; ctx.strokeRect(player.x + 10, player.y + 10, player.w - 20, player.h - 10);
+    }
+    ctx.fillStyle = '#f1c40f'; bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); });
+    ctx.fillStyle = '#ff4d4d'; enemyBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 10));
+    ctx.fillStyle = '#fff'; ctx.font = '16px sans-serif'; ctx.fillText(`売上: ${score}円`, 15, 30);
+    ctx.font = '12px sans-serif'; ctx.fillStyle = '#f1c40f'; ctx.fillText(`伝票: ${collectedChars}`, 15, 52);
+    if (msgTimer > 0) {
+        ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(message, canvas.width/2 - ctx.measureText(message).width/2, 180);
+        msgTimer--;
+    }
+}
+
+function gameLoop() {
+    update();
+    draw();
+    if (isRunning) requestAnimationFrame(gameLoop);
+}
+</script>
+</body>
+</html>

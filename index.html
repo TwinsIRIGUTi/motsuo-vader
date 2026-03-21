@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>モツオベーダー - 伝統の梅割り</title>
+  <title>モツオベーダー - 特大レバー攻略版</title>
   <style>
-    /* スタイルは変更なし */
     body { background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; touch-action: none; }
     #game-container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 2/3; }
     canvas { background: #0a0a0a; border: 3px solid #d35400; border-radius: 10px; display: block; width: 100%; height: 100%; box-shadow: 0 0 20px rgba(211, 84, 0, 0.4);}
@@ -34,7 +33,6 @@
 </div>
 
 <script>
-// 基本設定は引き継ぎ
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const startScreen = document.getElementById('start-screen');
@@ -50,7 +48,7 @@ let boss = null, bossKillCount = 0;
 let moveLeft = false, moveRight = false, keys = {};
 let highScore = localStorage.getItem('motsuo_highscore') || 0;
 
-// 自機画像：梅割り
+// 自機：梅割り
 const playerImg = new Image(); 
 playerImg.src = 'umewari.png'; 
 let useImage = false; 
@@ -123,7 +121,7 @@ function addChar(c) {
             score += 500;
             message = "「" + word + "、お待ちっ！」 (+500)";
             msgTimer = 90;
-            if(word === 'ビール') { flashTimer = 60; flashColor = "241, 196, 15"; } // 黄金色
+            if(word === 'ビール') { flashTimer = 60; flashColor = "241, 196, 15"; }
             collectedChars = tempHistory.join('');
             playBeep(880, 0.1, 'square', 0.06);
             setTimeout(() => playBeep(1100, 0.15, 'square', 0.06), 100);
@@ -134,7 +132,7 @@ function addChar(c) {
 
 function update() {
     if (!isRunning) return;
-    gameSpeed = 1 + (score / 30000);
+    gameSpeed = 1 + (score / 35000); // 難易度上昇をさらに緩やかに
 
     if ((keys['ArrowLeft'] || moveLeft) && player.x > 0) player.x -= 4.8;
     if ((keys['ArrowRight'] || moveRight) && player.x < canvas.width - player.w) player.x += 4.8;
@@ -155,13 +153,13 @@ function update() {
     });
     if (edgeHit) { enemyMoveDir *= -1; enemies.forEach(e => { if(e.alive) e.y += 18; }); }
 
+    // ボス出現ロジック：HPは常に「5」固定、速度はさらにスロー(0.4)
     if (!boss && killCount >= 50) { 
-        const hp = Math.min(5 + bossKillCount, 10);
-        boss = { x: -80, y: 40, w: 90, h: 50, hp: hp, maxHp: hp };
+        boss = { x: -80, y: 40, w: 90, h: 50, hp: 5, maxHp: 5 };
         killCount = 0;
     }
     if (boss) {
-        boss.x += 0.6 * gameSpeed;
+        boss.x += 0.4 * gameSpeed; // 低速移動
         if (boss.x > canvas.width) boss = null;
     }
 
@@ -176,7 +174,7 @@ function update() {
                 const bonus = 1500 + (bossKillCount * 500); 
                 score += bonus;
                 bossKillCount++;
-                flashTimer = 40; flashColor = "192, 57, 43"; // 梅エキス色
+                flashTimer = 40; flashColor = "192, 57, 43"; // 梅エキス・フラッシュ
                 message = `特大レバー完食！ 祝儀(+${bonus})`;
                 msgTimer = 100;
                 boss = null; playBeep(400, 0.3, 'square', 0.08);
@@ -244,10 +242,10 @@ function draw() {
     if (useImage) {
         ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
     } else {
-        // 梅割り代用描画（受け皿、琥珀色の焼酎、縦縞グラス）
+        // 梅割り代用描画
         ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.ellipse(player.x + 25, player.y + 60, 25, 8, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#e67e22'; ctx.fillRect(player.x + 12, player.y + 8, 26, 45); // 焼酎（琥珀色）
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(player.x + 12, player.y + 8, 26, 45); // グラス
+        ctx.fillStyle = '#e67e22'; ctx.fillRect(player.x + 12, player.y + 8, 26, 45);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(player.x + 12, player.y + 8, 26, 45);
         for(let i=0; i<3; i++) { ctx.beginPath(); ctx.moveTo(player.x+18+i*5, player.y+8); ctx.lineTo(player.x+18+i*5, player.y+53); ctx.stroke(); }
     }
 

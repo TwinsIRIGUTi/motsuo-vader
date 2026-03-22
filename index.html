@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>モツオベーダー - 無限入荷</title>
+  <title>モツオベーダー - 伝統の梅割り</title>
   <style>
     body { background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; touch-action: none; }
     #game-container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 2/3; }
@@ -13,8 +13,9 @@
     .btn:active { background: rgba(211, 84, 0, 0.8); transform: scale(0.9); }
     #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; border-radius: 10px; }
     h1 { color: #f1c40f; font-size: 28px; margin-bottom: 5px; text-shadow: 2px 2px #d35400; }
-    button#start-btn { padding: 15px 40px; font-size: 20px; background: #d35400; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; }
-    #high-score-ui { margin-top: 10px; color: #f1c40f; font-weight: bold; }
+    #high-score-ui { margin-bottom: 20px; color: #f1c40f; font-weight: bold; font-size: 18px; }
+    button#start-btn { padding: 15px 40px; font-size: 20px; background: #d35400; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; box-shadow: 0 4px #a04000; }
+    button#start-btn:active { transform: translateY(2px); box-shadow: 0 2px #a04000; }
   </style>
 </head>
 <body>
@@ -47,9 +48,14 @@ let groupX, enemyMoveDir, killCount = 0;
 let boss = null, bossKillCount = 0; 
 let moveLeft = false, moveRight = false, keys = {};
 
-// 最高売上の読み込み
-let highScore = parseInt(localStorage.getItem('motsuo_highscore')) || 0;
-highScoreDisplay.innerText = `最高売上: ${highScore}円`;
+// 最高売上の読み込み処理（確実化）
+function updateHighScoreUI() {
+    const saved = localStorage.getItem('motsuo_highscore');
+    const hs = saved ? parseInt(saved, 10) : 0;
+    highScoreDisplay.innerText = `最高売上: ${hs.toLocaleString()}円`;
+    return hs;
+}
+let highScore = updateHighScoreUI();
 
 const playerImg = new Image(); 
 playerImg.src = 'umewari.png'; 
@@ -71,10 +77,6 @@ function playBeep(freq, duration, type='square', vol=0.05) {
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + duration);
-}
-
-function getNextChar() {
-    return enemyChars[Math.floor(Math.random() * enemyChars.length)];
 }
 
 window.addEventListener('keydown', e => { keys[e.code] = true; });
@@ -100,58 +102,31 @@ function initGame() {
     score = 0; collectedChars = ""; gameSpeed = 1; frameCount = 0;
     message = ""; msgTimer = 0; flashTimer = 0; killCount = 0; bossKillCount = 0;
     groupX = 40; enemyMoveDir = 1; isRunning = true;
-    spawnEnemies();
-    requestAnimationFrame(gameLoop);
-}
-
-function spawnEnemies() {
+    
+    enemies = [];
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 6; c++) {
-            enemies.push({ col: c, y: 80 + r * 45, char: getNextChar(), alive: true, cd: Math.random() * 800 + 1000 });
+            enemies.push({ col: c, y: 80 + r * 45, char: enemyChars[Math.floor(Math.random()*enemyChars.length)], alive: true, cd: Math.random() * 800 + 1000 });
         }
     }
-}
-
-function addChar(c) {
-    collectedChars = (collectedChars + c).slice(-10);
-    for (const word of validWords) {
-        let tempHistory = collectedChars.split('');
-        let matchCount = 0;
-        for (const char of word) {
-            const index = tempHistory.indexOf(char);
-            if (index !== -1) { tempHistory.splice(index, 1); matchCount++; }
-        }
-        if (matchCount === word.length) {
-            score += 500;
-            message = "「" + word + "、お待ちっ！」 (+500)";
-            msgTimer = 90;
-            if(word === 'ビール') { flashTimer = 60; flashColor = "241, 196, 15"; }
-            collectedChars = tempHistory.join('');
-            playBeep(880, 0.1, 'square', 0.06);
-            setTimeout(() => playBeep(1100, 0.15, 'square', 0.06), 100);
-            break;
-        }
-    }
+    requestAnimationFrame(gameLoop);
 }
 
 function update() {
     if (!isRunning) return;
     
-    // 時間経過（frameCount）でスピードを徐々に上げる（約1分で2倍の速さへ）
+    // 時間経過で加速（3600フレーム＝約1分で2倍）
     gameSpeed = 1 + (frameCount / 3600); 
 
-    if ((keys['ArrowLeft'] || moveLeft) && player.x > 0) player.x -= 4.8;
-    if ((keys['ArrowRight'] || moveRight) && player.x < canvas.width - player.w) player.x += 4.8;
+    if ((keys['ArrowLeft'] || moveLeft) && player.x > 0) player.x -= 5;
+    if ((keys['ArrowRight'] || moveRight) && player.x < canvas.width - player.w) player.x += 5;
 
     if (frameCount % 20 === 0) {
         bullets.push({ x: player.x + player.w / 2, y: player.y });
         playBeep(600, 0.04, 'square', 0.02);
     }
 
-    // 敵の横移動速度
-    let moveAmount = 0.3 * gameSpeed * enemyMoveDir;
-    groupX += moveAmount;
-    
+    groupX += 0.35 * gameSpeed * enemyMoveDir;
     let edgeHit = false;
     enemies.forEach(e => {
         if (e.alive) {
@@ -164,18 +139,17 @@ function update() {
         enemies.forEach(e => { if(e.alive) e.y += 18; }); 
     }
 
-    // ボス出現（50機ごと、HP5固定、速度0.4固定）
     if (!boss && killCount >= 50) { 
         boss = { x: -80, y: 40, w: 90, h: 50, hp: 5, maxHp: 5 };
         killCount = 0;
     }
     if (boss) {
-        boss.x += 0.4; // 難易度に関わらず一定の低速
+        boss.x += 0.4; 
         if (boss.x > canvas.width) boss = null;
     }
 
     for (let i = bullets.length - 1; i >= 0; i--) {
-        let b = bullets[i]; b.y -= 8.5;
+        let b = bullets[i]; b.y -= 9;
         if (b.y < 0) { bullets.splice(i, 1); continue; }
         
         if (boss && b.x > boss.x && b.x < boss.x + boss.w && b.y > boss.y && b.y < boss.y + boss.h) {
@@ -183,13 +157,10 @@ function update() {
             playBeep(200, 0.05, 'sawtooth', 0.05);
             if (boss.hp <= 0) {
                 const bonus = 1500 + (bossKillCount * 500); 
-                score += bonus;
-                bossKillCount++;
+                score += bonus; bossKillCount++;
                 flashTimer = 40; flashColor = "192, 57, 43"; 
-                message = `特大レバー完食！ 祝儀(+${bonus})`;
-                msgTimer = 100;
-                boss = null; 
-                playBeep(400, 0.3, 'square', 0.08);
+                message = `特大レバー完食！ (+${bonus})`; msgTimer = 100;
+                boss = null; playBeep(400, 0.3, 'square', 0.08);
             }
             continue;
         }
@@ -197,14 +168,27 @@ function update() {
         for (let j = 0; j < enemies.length; j++) {
             let e = enemies[j]; let ex = groupX + e.col * 55, ey = e.y;
             if (e.alive && b.x > ex - 2 && b.x < ex + 42 && b.y > ey - 18 && b.y < ey + 18) {
-                e.alive = false; 
-                score += 10; killCount++;
+                e.alive = false; score += 10; killCount++;
                 playBeep(120, 0.08, 'sawtooth', 0.04);
-                addChar(e.char); 
-                bullets.splice(i, 1);
                 
-                // 品切れなし：即座に上からリスポーンさせる準備
-                setTimeout(() => { e.alive = true; e.char = getNextChar(); e.y = 60; }, 1000);
+                // 言葉判定
+                collectedChars = (collectedChars + e.char).slice(-10);
+                for (const word of validWords) {
+                    let tempHistory = collectedChars.split('');
+                    let matchCount = 0;
+                    for (const char of word) {
+                        const idx = tempHistory.indexOf(char);
+                        if (idx !== -1) { tempHistory.splice(idx, 1); matchCount++; }
+                    }
+                    if (matchCount === word.length) {
+                        score += 500; message = "「" + word + "、お待ちっ！」"; msgTimer = 90;
+                        if(word === 'ビール') { flashTimer = 60; flashColor = "241, 196, 15"; }
+                        collectedChars = tempHistory.join('');
+                        playBeep(880, 0.1); break;
+                    }
+                }
+                bullets.splice(i, 1);
+                setTimeout(() => { e.alive = true; e.char = enemyChars[Math.floor(Math.random()*enemyChars.length)]; e.y = 60; }, 1200);
                 break;
             }
         }
@@ -220,7 +204,7 @@ function update() {
     });
 
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        let eb = enemyBullets[i]; eb.y += 1.6 * gameSpeed;
+        let eb = enemyBullets[i]; eb.y += 1.8 * gameSpeed;
         if (eb.y > canvas.height) { enemyBullets.splice(i, 1); continue; }
         if (eb.x > player.x && eb.x < player.x + player.w && eb.y > player.y && eb.y < player.y + player.h) gameOver();
     }
@@ -230,14 +214,15 @@ function update() {
 
 function gameOver() {
     isRunning = false;
-    // スコア更新ロジック
     if (score > highScore) { 
         highScore = score; 
         localStorage.setItem('motsuo_highscore', highScore.toString());
-        highScoreDisplay.innerText = `最高売上: ${highScore}円`;
     }
+    // タイトル画面の表示を更新
+    updateHighScoreUI();
+    
     setTimeout(() => { 
-        alert("本日閉店！ 売上: " + score + "円"); 
+        alert("本日閉店！ 売上: " + score.toLocaleString() + "円"); 
         startScreen.style.display = 'flex'; 
     }, 10);
 }
@@ -247,10 +232,8 @@ function draw() {
     if (flashTimer > 0) { ctx.fillStyle = `rgba(${flashColor}, ${flashTimer/100})`; ctx.fillRect(0,0,canvas.width,canvas.height); }
 
     if (boss) {
-        ctx.fillStyle = '#800000'; ctx.beginPath(); 
-        ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 10); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; 
-        ctx.fillText("特大レバー", boss.x + 8, boss.y + boss.h/2 + 6);
+        ctx.fillStyle = '#800000'; ctx.beginPath(); ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 10); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.fillText("特大レバー", boss.x + 8, boss.y + boss.h/2 + 6);
         ctx.fillStyle = '#f00'; ctx.fillRect(boss.x, boss.y - 12, (boss.hp/boss.maxHp) * boss.w, 6);
     }
 
@@ -258,21 +241,18 @@ function draw() {
         if (!e.alive) return;
         let ex = groupX + e.col * 55, ey = e.y;
         ctx.fillStyle = '#f3d6c1'; ctx.beginPath(); ctx.ellipse(ex + 20, ey, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#333'; 
-        ctx.font = 'bold 16px sans-serif'; ctx.fillText(e.char, ex + 12, ey + 6);
+        ctx.fillStyle = '#333'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(e.char, ex + 12, ey + 6);
     });
 
-    if (useImage) {
-        ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
-    } else {
-        ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.ellipse(player.x + 25, player.y + 60, 25, 8, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#e67e22'; ctx.fillRect(player.x + 12, player.y + 8, 26, 45);
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(player.x + 12, player.y + 8, 26, 45);
+    if (useImage) { ctx.drawImage(playerImg, player.x, player.y, player.w, player.h); }
+    else {
+        ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.ellipse(player.x+25, player.y+60, 25, 8, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#e67e22'; ctx.fillRect(player.x+12, player.y+8, 26, 45);
     }
 
     ctx.fillStyle = '#f1c40f'; bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); });
     ctx.fillStyle = '#ff4d4d'; enemyBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 10));
-    ctx.fillStyle = '#fff'; ctx.font = '16px sans-serif'; ctx.fillText(`売上: ${score}円`, 15, 30);
+    ctx.fillStyle = '#fff'; ctx.font = '16px sans-serif'; ctx.fillText(`売上: ${score.toLocaleString()}円`, 15, 30);
     ctx.font = '12px sans-serif'; ctx.fillStyle = '#f1c40f'; ctx.fillText(`伝票: ${collectedChars}`, 15, 52);
     if (msgTimer > 0) {
         ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 20px sans-serif';

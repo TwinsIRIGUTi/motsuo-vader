@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>モツオベーダー - 特大レバー攻略版</title>
+  <title>モツオベーダー - 無限入荷</title>
   <style>
     body { background: #1a1a1a; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; touch-action: none; }
     #game-container { position: relative; width: 100%; max-width: 400px; aspect-ratio: 2/3; }
@@ -46,9 +46,11 @@ let player, bullets, enemyBullets, enemies, score, collectedChars, gameSpeed, fr
 let groupX, enemyMoveDir, killCount = 0;
 let boss = null, bossKillCount = 0; 
 let moveLeft = false, moveRight = false, keys = {};
-let highScore = localStorage.getItem('motsuo_highscore') || 0;
 
-// 自機：梅割り
+// 最高売上の読み込み
+let highScore = parseInt(localStorage.getItem('motsuo_highscore')) || 0;
+highScoreDisplay.innerText = `最高売上: ${highScore}円`;
+
 const playerImg = new Image(); 
 playerImg.src = 'umewari.png'; 
 let useImage = false; 
@@ -72,9 +74,7 @@ function playBeep(freq, duration, type='square', vol=0.05) {
 }
 
 function getNextChar() {
-    let filtered = enemyChars.filter(c => !collectedChars.includes(c));
-    let pool = filtered.length > 5 ? filtered : enemyChars; 
-    return pool[Math.floor(Math.random() * pool.length)];
+    return enemyChars[Math.floor(Math.random() * enemyChars.length)];
 }
 
 window.addEventListener('keydown', e => { keys[e.code] = true; });
@@ -87,8 +87,12 @@ leftBtn.addEventListener('touchend', (e) => { preventDefault(e); moveLeft = fals
 rightBtn.addEventListener('touchstart', (e) => { preventDefault(e); moveRight = true; });
 rightBtn.addEventListener('touchend', (e) => { preventDefault(e); moveRight = false; });
 
-highScoreDisplay.innerText = `最高売上: ${highScore}円`;
-startBtn.addEventListener('click', (e) => { e.preventDefault(); initAudio(); startScreen.style.display = 'none'; initGame(); });
+startBtn.addEventListener('click', (e) => { 
+    e.preventDefault(); 
+    initAudio(); 
+    startScreen.style.display = 'none'; 
+    initGame(); 
+});
 
 function initGame() {
     player = { x: 175, y: 510, w: 50, h: 70 };
@@ -103,7 +107,7 @@ function initGame() {
 function spawnEnemies() {
     for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 6; c++) {
-            enemies.push({ col: c, y: 80 + r * 45, char: getNextChar(), alive: true, respawn: 0, cd: Math.random() * 800 + 1000 });
+            enemies.push({ col: c, y: 80 + r * 45, char: getNextChar(), alive: true, cd: Math.random() * 800 + 1000 });
         }
     }
 }
@@ -132,18 +136,22 @@ function addChar(c) {
 
 function update() {
     if (!isRunning) return;
-    gameSpeed = 1 + (score / 35000); // 難易度上昇をさらに緩やかに
+    
+    // 時間経過（frameCount）でスピードを徐々に上げる（約1分で2倍の速さへ）
+    gameSpeed = 1 + (frameCount / 3600); 
 
     if ((keys['ArrowLeft'] || moveLeft) && player.x > 0) player.x -= 4.8;
     if ((keys['ArrowRight'] || moveRight) && player.x < canvas.width - player.w) player.x += 4.8;
 
-    if (frameCount % 22 === 0) {
+    if (frameCount % 20 === 0) {
         bullets.push({ x: player.x + player.w / 2, y: player.y });
         playBeep(600, 0.04, 'square', 0.02);
     }
 
-    let moveAmount = 0.25 * gameSpeed * enemyMoveDir;
+    // 敵の横移動速度
+    let moveAmount = 0.3 * gameSpeed * enemyMoveDir;
     groupX += moveAmount;
+    
     let edgeHit = false;
     enemies.forEach(e => {
         if (e.alive) {
@@ -151,15 +159,18 @@ function update() {
             if ((enemyMoveDir === 1 && cx > canvas.width - 45) || (enemyMoveDir === -1 && cx < 5)) edgeHit = true;
         }
     });
-    if (edgeHit) { enemyMoveDir *= -1; enemies.forEach(e => { if(e.alive) e.y += 18; }); }
+    if (edgeHit) { 
+        enemyMoveDir *= -1; 
+        enemies.forEach(e => { if(e.alive) e.y += 18; }); 
+    }
 
-    // ボス出現ロジック：HPは常に「5」固定、速度はさらにスロー(0.4)
+    // ボス出現（50機ごと、HP5固定、速度0.4固定）
     if (!boss && killCount >= 50) { 
         boss = { x: -80, y: 40, w: 90, h: 50, hp: 5, maxHp: 5 };
         killCount = 0;
     }
     if (boss) {
-        boss.x += 0.4 * gameSpeed; // 低速移動
+        boss.x += 0.4; // 難易度に関わらず一定の低速
         if (boss.x > canvas.width) boss = null;
     }
 
@@ -174,10 +185,11 @@ function update() {
                 const bonus = 1500 + (bossKillCount * 500); 
                 score += bonus;
                 bossKillCount++;
-                flashTimer = 40; flashColor = "192, 57, 43"; // 梅エキス・フラッシュ
+                flashTimer = 40; flashColor = "192, 57, 43"; 
                 message = `特大レバー完食！ 祝儀(+${bonus})`;
                 msgTimer = 100;
-                boss = null; playBeep(400, 0.3, 'square', 0.08);
+                boss = null; 
+                playBeep(400, 0.3, 'square', 0.08);
             }
             continue;
         }
@@ -185,27 +197,30 @@ function update() {
         for (let j = 0; j < enemies.length; j++) {
             let e = enemies[j]; let ex = groupX + e.col * 55, ey = e.y;
             if (e.alive && b.x > ex - 2 && b.x < ex + 42 && b.y > ey - 18 && b.y < ey + 18) {
-                e.alive = false; e.respawn = 180; score += 10; killCount++;
+                e.alive = false; 
+                score += 10; killCount++;
                 playBeep(120, 0.08, 'sawtooth', 0.04);
-                addChar(e.char); bullets.splice(i, 1); break;
+                addChar(e.char); 
+                bullets.splice(i, 1);
+                
+                // 品切れなし：即座に上からリスポーンさせる準備
+                setTimeout(() => { e.alive = true; e.char = getNextChar(); e.y = 60; }, 1000);
+                break;
             }
         }
     }
 
     enemies.forEach(e => {
-        if (!e.alive) {
-            if (--e.respawn <= 0) { e.alive = true; e.char = getNextChar(); e.y = 70; }
-            return;
-        }
+        if (!e.alive) return;
         if (--e.cd <= 0) {
             enemyBullets.push({ x: groupX + e.col * 55 + 20, y: e.y + 10 });
-            e.cd = (Math.random() * 3500 + 2500) / gameSpeed;
+            e.cd = (Math.random() * 3000 + 2000) / gameSpeed;
         }
         if (e.y > player.y - 10) gameOver();
     });
 
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        let eb = enemyBullets[i]; eb.y += 1.5 * gameSpeed;
+        let eb = enemyBullets[i]; eb.y += 1.6 * gameSpeed;
         if (eb.y > canvas.height) { enemyBullets.splice(i, 1); continue; }
         if (eb.x > player.x && eb.x < player.x + player.w && eb.y > player.y && eb.y < player.y + player.h) gameOver();
     }
@@ -215,8 +230,16 @@ function update() {
 
 function gameOver() {
     isRunning = false;
-    if (score > highScore) { highScore = score; localStorage.setItem('motsuo_highscore', highScore); }
-    setTimeout(() => { alert("本日閉店！ 売上: " + score + "円"); startScreen.style.display = 'flex'; }, 10);
+    // スコア更新ロジック
+    if (score > highScore) { 
+        highScore = score; 
+        localStorage.setItem('motsuo_highscore', highScore.toString());
+        highScoreDisplay.innerText = `最高売上: ${highScore}円`;
+    }
+    setTimeout(() => { 
+        alert("本日閉店！ 売上: " + score + "円"); 
+        startScreen.style.display = 'flex'; 
+    }, 10);
 }
 
 function draw() {
@@ -235,18 +258,16 @@ function draw() {
         if (!e.alive) return;
         let ex = groupX + e.col * 55, ey = e.y;
         ctx.fillStyle = '#f3d6c1'; ctx.beginPath(); ctx.ellipse(ex + 20, ey, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = collectedChars.includes(e.char) ? '#999' : '#333'; 
+        ctx.fillStyle = '#333'; 
         ctx.font = 'bold 16px sans-serif'; ctx.fillText(e.char, ex + 12, ey + 6);
     });
 
     if (useImage) {
         ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
     } else {
-        // 梅割り代用描画
         ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.ellipse(player.x + 25, player.y + 60, 25, 8, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#e67e22'; ctx.fillRect(player.x + 12, player.y + 8, 26, 45);
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(player.x + 12, player.y + 8, 26, 45);
-        for(let i=0; i<3; i++) { ctx.beginPath(); ctx.moveTo(player.x+18+i*5, player.y+8); ctx.lineTo(player.x+18+i*5, player.y+53); ctx.stroke(); }
     }
 
     ctx.fillStyle = '#f1c40f'; bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); });
